@@ -1,0 +1,59 @@
+{
+  "profiles": {
+    "ai.services.api": {
+      "commandName": "Project",
+      "commandLineArgs": "--port 7034",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "azureOpenAIEndpoint": "https://rndopenai2024.openai.azure.com",
+        "azureOpenAIApiKey": "b2bebc8e82fa428d8a807d483d867acd",
+        "azureOpenAIVersion": "2024-10-21",
+        "azureOpenAIDeploymentName": "gpt-4o-2",
+        "azureOpenAIDeploymentName4o3": "gpt-4o-3",
+        "azureOpenAIVersionMO1": "2024-12-01-preview",
+        "azureOpenAIDeploymentNameMO1": "o1-mini",
+        "azureOpenAIMiniDeploymentName": "gpt-4o-mini",
+        "claudeEndpoint": "https://api.anthropic.com/v1/messages",
+        "claudeApiKey": "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",
+        "claudeVersion": "2023-06-01",
+        "claudeDeploymentName": "claude-3-5-sonnet-20241022",
+        "claudeBeta": "pdfs-2024-09-25",
+        "maxTokenClaude": "1024",
+        "searchEndpoint": "https://rndaisearch2024.search.windows.net",
+        "searchKey": "IIyGnecpPPdXbZN83roAAt1M6gXwl6HG64VuSjsgKsAzSeDGIdHD",
+        "serviceName": "rndaisearch2024",
+        "searchIndexResearch": "vector-researchdocs",
+        "searchIndexCompany": "vector3-bsi-content-1726200938051",
+        "azureImageGenEndpoint": "https://rndopenaisweden2024.openai.azure.com",
+        "azureImageGenApiKey": "FXbIgmj2oPBbEeNgwTautUHq4Mfv4S5l4M724JTxCoTQhv312ubZJQQJ99AKACfhMk5XJ3w3AAABACOGGz2R",
+        "azureImageGenVersion": "2024-10-21",
+        "azureImageGenDeploymentName": "dall-e-3-sweden-eira",
+        "documentServiceEndpoint": "http://20.24.177.253:8080",
+        "pgConnectionString": "User ID=eira;Password=!rndBSI2024;Host=azbsisqlt001.postgres.database.azure.com;Port=5432;Database=eira;Pooling=true;SearchPath=gpt;",
+        "mqHost": "57.155.72.142",
+        "mqPort": "5672",
+        "mqUser": "eiramq",
+        "mqPassword": "!rndBSI",
+        "mqQueue": "eira",
+        "containerName": "eira-user-context",
+        "blobStorageConnectionString": "DefaultEndpointsProtocol=https;AccountName=rndstoragefy24;AccountKey=bMlLy36SGveiCBucLhaOoFHoWTUW/l7XR/RLCqcTUaJaz0WSYrNvtZd3MJTuCgEZcN1vnbblaecY+ASt5KuOFA==;EndpointSuffix=core.windows.net",
+        "containerNameChat": "chatdata",
+        "azureEmbeddingEndpoint": "https://rndopenai2024.openai.azure.com",
+        "mqDocStatusQueue": "status_updates",
+        "mqDocQueue": "document_uploaded",
+        "mqDocStatusExchange": "status_updates_exchange",
+        "aesKey": "w5v3nK4zB9t5pVl7Z+qgFZ9KNX3cBd7rVZujH4MdWEM=",
+        "aesIV": "5mbT7+CmHsZGXyY5r3TbGQ==",
+        "perplexityEndpoint": "https://api.perplexity.ai",
+        "perplexityKey": "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",
+        "perplexityDeploymentName": "llama-3.1-sonar-large-128k-online"
+      }
+    },
+    "Container (Dockerfile)": {
+      "commandName": "Docker",
+      "launchUrl": "{Scheme}://{ServiceHost}:{ServicePort}",
+      "httpPort": 33418,
+      "useSSL": false
+    }
+  }
+}

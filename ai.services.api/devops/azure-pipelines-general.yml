@@ -1,0 +1,174 @@
+trigger:
+  branches:
+    include:
+      - company/bsi
+      - company/mmksi
+      - company/ktb
+  tags:
+    include:
+      - 'v*.*.*-ktb'
+      - 'v*.*.*-mmksi'
+      - 'v*.*.*-bsi'
+
+pool:
+  vmImage: 'ubuntu-latest'  # Use the latest Ubuntu image
+
+variables:
+  - group: Eira-API-Service-VariableSet
+  - name: imageName
+    value: 'eira/backend/api'
+  - name: tagName
+    value: $[ replace(variables['Build.SourceBranch'], 'refs/tags/', '') ]
+
+jobs:
+- job: Setup
+  steps:
+    - script: |
+        # Set deploymentName with fallback
+        echo "$(deployName)"
+        if [ -n "$(deployName)" ]; then
+          echo "##vso[task.setvariable variable=deploymentName;isOutput=true]$(deployName)"
+        else
+          echo "##vso[task.setvariable variable=deploymentName;isOutput=true]eira-api-service"
+        fi
+        
+        echo ${TENANT}
+        REGEX="^v?[0-9]+\.[0-9]+\.[0-9]+(-${TENANT})?$"
+        # Set finalTagName with fallback
+        echo "$(tagName)"
+        if [[ "$(tagName)" =~ $REGEX ]]; then
+          echo "##vso[task.setvariable variable=finalTagName;isOutput=true]$(tagName)"
+        else
+          echo "##vso[task.setvariable variable=finalTagName;isOutput=true]$(Build.BuildId)"
+        fi
+      name: DeploymentVar  # Single step name
+      displayName: "Set Deployment Runtime Variables"
+
+- job: BuildnPush
+  dependsOn: Setup
+  variables:
+    deploymentName: $[ dependencies.Setup.outputs['DeploymentVar.deploymentName'] ]
+    finalTagName: $[ dependencies.Setup.outputs['DeploymentVar.finalTagName'] ]
+  steps:
+  - task: Bash@3
+    displayName: 'Prepare Secrets'
+    inputs:
+      targetType: 'inline'
+      script: |
+        echo "$(SECRET_MASTER_KEY)" | base64 -d > secret.json
+  - task: Docker@2
+    inputs:
+      containerRegistry: 'EIRA-container-Registry'
+      repository: '$(imageName)'
+      command: 'buildAndPush'
+      Dockerfile: '**/Dockerfile'
+      tags: |
+        $(finalTagName)
+        latest
+
+  - script: |
+      echo "Image pushed to ACR: $(acrName).azurecr.io/$(imageName):$(finalTagName)"
+    displayName: 'Log ACR Image URL'
+
+- job: Deploy
+  dependsOn: 
+    - Setup
+    - BuildnPush
+  variables:
+    deploymentName: $[ dependencies.Setup.outputs['DeploymentVar.deploymentName'] ]
+    finalTagName: $[ dependencies.Setup.outputs['DeploymentVar.finalTagName'] ]
+  steps:
+  - script: |
+        echo "$(deploymentName)"
+        echo "$(finalTagName)"
+    name: DeploymentVar  # Single step name
+    displayName: "Set Deployment Runtime Variables"
+
+  - task: KubeloginInstaller@0
+    inputs:
+      kubeloginVersion: 'latest'
+
+  - task: AzureCLI@2
+    displayName: 'Check if Secret exist'
+    condition: eq(variables['checkSecret'], 'true')
+    inputs:
+      azureSubscription: 'Shared-Cloud-Azure-01'
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        az aks get-credentials --resource-group $(resourceGroup) --name $(clusterName)
+
+        kubelogin convert-kubeconfig -l azurecli
+
+        # Check if Secret exists
+        if kubectl get secret $(deploymentName)-api -n $(namespace); then
+          echo "Secret '$(deploymentName)-api' already exists."
+        else
+          echo "Secret '$(deploymentName)-api' does not exist."
+          echo "##vso[task.setvariable variable=deploySecret]true"
+        fi
+
+        # Set a variable to indicate whether to run the KubernetesManifest task
+        if "$(deploySecret)" == "true"; then
+          echo "Either ConfigMap or Secret needs to be deployed."
+          echo "##vso[task.setvariable variable=runKubernetesManifest]true"
+        else
+          echo "Both ConfigMap and Secret already exist. Skipping deployment."
+        fi
+
+  - task: Bash@3
+    # condition: eq(variables['deploySecret'], 'true')
+    displayName: 'Prepare Secrets'
+    inputs:
+      targetType: 'inline'
+      script: |
+        echo "$(SECRETENVFILE)" | base64 -d > secrets.yaml
+
+  - task: KubernetesManifest@1
+    # condition: eq(variables['deploySecret'], 'true')
+    inputs:
+      action: 'deploy'
+      connectionType: 'azureResourceManager'
+      azureSubscriptionConnection: 'Shared-Cloud-Azure-01'
+      azureResourceGroup: 'RG-Prod-Shared-AKS'
+      kubernetesCluster: 'AZSHRAKSP100'
+      namespace: '$(namespace)'
+      manifests: secrets.yaml
+    displayName: "Deploy Secret"
+
+  - script: |
+      # Update deployment name in deployment.yaml
+      sed -i "s|name: deployment_name|name: $(deploymentName)|" $(manifestPath)/deployment.yaml
+      sed -i "s|name: deployment_name|name: $(deploymentName)|" $(manifestPath)/services.yaml
+
+      # Update image repository and tag in deployment.yaml
+      sed -i "s|image: .*|image: $(acrName).azurecr.io/$(imageName):$(finalTagName)|" $(manifestPath)/deployment.yaml
+
+      # Update namespace in deployment.yaml
+      sed -i "s|namespace: .*|namespace: \"$(namespace)\"|" $(manifestPath)/deployment.yaml
+
+      # Optional: Print the updated deployment.yaml for debugging
+      cat $(manifestPath)/deployment.yaml
+    displayName: "Prepare Deployment Manifest"
+  
+  - task: KubernetesManifest@1
+    inputs:
+      action: 'deploy'
+      connectionType: 'azureResourceManager'
+      azureSubscriptionConnection: 'Shared-Cloud-Azure-01'
+      azureResourceGroup: 'RG-Prod-Shared-AKS'
+      kubernetesCluster: 'AZSHRAKSP100'
+      namespace: '$(namespace)'
+      manifests: $(manifestPath)/deployment.yaml
+    displayName: "Deploy Apps"
+
+  - task: KubernetesManifest@1
+    inputs:
+      action: 'deploy'
+      connectionType: 'azureResourceManager'
+      azureSubscriptionConnection: 'Shared-Cloud-Azure-01'
+      azureResourceGroup: 'RG-Prod-Shared-AKS'
+      kubernetesCluster: 'AZSHRAKSP100'
+      namespace: '$(namespace)'
+      manifests: $(manifestPath)/services.yaml
+    displayName: "Deploy Service"

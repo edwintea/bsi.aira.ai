@@ -1,0 +1,132 @@
+trigger:
+  branches:
+    include:
+      - company/bsi  # Trigger the pipeline on changes to the main branch
+
+pool:
+  vmImage: 'ubuntu-latest'  # Use the latest Ubuntu image
+
+variables:
+  imageName: 'eira/backend/api'  # Name of the Docker image
+  acrName: 'azeiraacrp100'      # Name of your Azure Container Registry
+  manifestPath: './devops'
+  clusterName: 'AZSHRAKSP100'
+  resourceGroup: 'RG-Prod-Shared-AKS'
+  deploymentName: $[ if(ne(variables['deployName'], ''), variables['deployName'], 'eira-api-service') ]
+
+jobs:
+- job: BuildnPush
+  steps:
+  - task: Bash@3
+    displayName: 'Prepare Secrets'
+    inputs:
+      targetType: 'inline'
+      script: |
+        echo "$(SECRET_MASTER_KEY)" | base64 -d > secret.json
+  - task: Docker@2
+    inputs:
+      containerRegistry: 'EIRA-container-Registry'
+      repository: '$(imageName)'
+      command: 'buildAndPush'
+      Dockerfile: '**/Dockerfile'
+      tags: |
+        $(Build.BuildId)
+        latest
+
+  - script: |
+      echo "Image pushed to ACR: $(acrName).azurecr.io/$(imageName):$(Build.BuildId)"
+    displayName: 'Log ACR Image URL'
+
+- job: Deploy
+  dependsOn: BuildnPush
+  steps:
+
+  - task: KubeloginInstaller@0
+    inputs:
+      kubeloginVersion: 'latest'
+
+  - task: AzureCLI@2
+    displayName: 'Check if Secret exist'
+    condition: eq(variables['checkSecret'], 'true')
+    inputs:
+      azureSubscription: 'Shared-Cloud-Azure-01'
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        az aks get-credentials --resource-group $(resourceGroup) --name $(clusterName)
+
+        kubelogin convert-kubeconfig -l azurecli
+
+        # Check if Secret exists
+        if kubectl get secret azeirapodp107-api -n $(namespace); then
+          echo "Secret 'azeirapodp107-api' already exists."
+        else
+          echo "Secret 'azeirapodp107-api' does not exist."
+          echo "##vso[task.setvariable variable=deploySecret]true"
+        fi
+
+        # Set a variable to indicate whether to run the KubernetesManifest task
+        if "$(deploySecret)" == "true"; then
+          echo "Either ConfigMap or Secret needs to be deployed."
+          echo "##vso[task.setvariable variable=runKubernetesManifest]true"
+        else
+          echo "Both ConfigMap and Secret already exist. Skipping deployment."
+        fi
+
+  - task: Bash@3
+    # condition: eq(variables['deploySecret'], 'true')
+    displayName: 'Prepare Secrets'
+    inputs:
+      targetType: 'inline'
+      script: |
+        echo "$(SECRETENVFILE)" | base64 -d > secrets.yaml
+
+  - task: KubernetesManifest@1
+    # condition: eq(variables['deploySecret'], 'true')
+    inputs:
+      action: 'deploy'
+      connectionType: 'azureResourceManager'
+      azureSubscriptionConnection: 'Shared-Cloud-Azure-01'
+      azureResourceGroup: 'RG-Prod-Shared-AKS'
+      kubernetesCluster: 'AZSHRAKSP100'
+      namespace: '$(namespace)'
+      manifests: secrets.yaml
+    displayName: "Deploy Secret"
+
+  - script: |
+      # Update deployment name in deployment.yaml
+      sed -i "s|name: deployment_name|name: $(deploymentName)|" $(manifestPath)/deployment.yaml
+      sed -i "s|name: deployment_name|name: $(deploymentName)|" $(manifestPath)/services.yaml
+
+      # Update image repository and tag in deployment.yaml
+      sed -i "s|image: .*|image: $(acrName).azurecr.io/$(imageName):$(Build.BuildId)|" $(manifestPath)/deployment.yaml
+
+      # Update namespace in deployment.yaml
+      sed -i "s|namespace: .*|namespace: \"$(namespace)\"|" $(manifestPath)/deployment.yaml
+
+      # Optional: Print the updated deployment.yaml for debugging
+      cat $(manifestPath)/deployment.yaml
+    displayName: "Prepare Deployment Manifest"
+  
+  - task: KubernetesManifest@1
+    inputs:
+      action: 'deploy'
+      connectionType: 'azureResourceManager'
+      azureSubscriptionConnection: 'Shared-Cloud-Azure-01'
+      azureResourceGroup: 'RG-Prod-Shared-AKS'
+      kubernetesCluster: 'AZSHRAKSP100'
+      namespace: '$(namespace)'
+      manifests: $(manifestPath)/deployment.yaml
+    displayName: "Deploy Apps"
+
+  - task: KubernetesManifest@1
+    inputs:
+      action: 'deploy'
+      connectionType: 'azureResourceManager'
+      azureSubscriptionConnection: 'Shared-Cloud-Azure-01'
+      azureResourceGroup: 'RG-Prod-Shared-AKS'
+      kubernetesCluster: 'AZSHRAKSP100'
+      namespace: '$(namespace)'
+      manifests: $(manifestPath)/services.yaml
+    displayName: "Deploy Service"
+

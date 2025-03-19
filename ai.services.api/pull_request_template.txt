@@ -1,0 +1,21 @@
+## **Purpose of the PR**
+[Please fill here...]
+
+## **Key Changes**
+•	Add: [Please fill here...]
+•	Add: [Please fill here...]
+•	Add: [Please fill here...]
+
+## **How to test**
+•	[Please fill here...]
+•	[Please fill here...]
+
+## **Impacted System**
+- [ ] Eira Web app
+- [ ] Eira API
+- [ ] Eira Database
+	
+## **Conditions on New Code**
+- [ ]  Reliability Rating  (No bugs)	 
+- [ ]  Security Rating (No vulnerabilities) 
+- [ ]  Security Hotspots Reviewed 100%
